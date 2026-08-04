@@ -1,0 +1,118 @@
+import { useCallback, useEffect, useState } from "react";
+import { supabase, HOUSEHOLD } from "./supabase";
+
+const DEFAULT_SETTINGS = {
+  household_id: HOUSEHOLD,
+  rates: { bath: 2.49, byn: 2.5, usd: 91.88 },
+  usd_fee: 0.25,
+  initial_balances: { rub: 0, bath: 0, byn: 0, usd: 0 },
+};
+
+// Все данные семьи + подписка на изменения: если Оксана записала расход
+// со своего телефона, он появляется здесь сам, без перезагрузки.
+export function useBudget(session) {
+  const [state, setState] = useState({
+    txs: [], debts: [], goals: [], limits: [], settings: DEFAULT_SETTINGS,
+  });
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState(null);
+  const [busy, setBusy] = useState(false);
+
+  const load = useCallback(async () => {
+    if (!session) return;
+    try {
+      const [txs, debts, goals, limits, settings] = await Promise.all([
+        supabase.from("budget_transactions").select("*").eq("household_id", HOUSEHOLD)
+          .order("date", { ascending: false }).order("created_at", { ascending: false }),
+        supabase.from("budget_debts").select("*").eq("household_id", HOUSEHOLD)
+          .eq("archived", false).order("sort_order"),
+        supabase.from("budget_goals").select("*").eq("household_id", HOUSEHOLD)
+          .eq("archived", false).order("sort_order"),
+        supabase.from("budget_limits").select("*").eq("household_id", HOUSEHOLD),
+        supabase.from("budget_settings").select("*").eq("household_id", HOUSEHOLD).maybeSingle(),
+      ]);
+      const first = [txs, debts, goals, limits, settings].find((r) => r.error);
+      if (first) throw first.error;
+      setState({
+        txs: txs.data || [],
+        debts: debts.data || [],
+        goals: goals.data || [],
+        limits: limits.data || [],
+        settings: settings.data || DEFAULT_SETTINGS,
+      });
+      setError(null);
+    } catch (e) {
+      setError(e.message || "Не удалось загрузить данные");
+    } finally {
+      setLoading(false);
+    }
+  }, [session]);
+
+  useEffect(() => { load(); }, [load]);
+
+  // Реалтайм: слушаем изменения во всех таблицах бюджета
+  useEffect(() => {
+    if (!session) return;
+    const ch = supabase.channel("budget-sync");
+    ["budget_transactions", "budget_debts", "budget_goals", "budget_limits", "budget_settings"]
+      .forEach((table) => ch.on("postgres_changes", { event: "*", schema: "public", table }, load));
+    ch.subscribe();
+    return () => { supabase.removeChannel(ch); };
+  }, [session, load]);
+
+  // ─── Действия ────────────────────────────────────────────────────────────
+  const run = async (fn) => {
+    setBusy(true);
+    try {
+      const { error: e } = await fn();
+      if (e) throw e;
+      await load();
+      return true;
+    } catch (e) {
+      setError(e.message || "Ошибка сохранения");
+      return false;
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const addTx = (tx) => run(() =>
+    supabase.from("budget_transactions").insert({
+      ...tx, household_id: HOUSEHOLD, author: session.user.id,
+    }));
+
+  const delTx = (id) => run(() =>
+    supabase.from("budget_transactions").delete().eq("id", id));
+
+  const setLimit = (month, category, amount) => run(() =>
+    Number(amount) > 0
+      ? supabase.from("budget_limits").upsert({
+          household_id: HOUSEHOLD, month, category, amount: Number(amount),
+        })
+      : supabase.from("budget_limits").delete()
+          .eq("household_id", HOUSEHOLD).eq("month", month).eq("category", category));
+
+  const saveSettings = (patch) => run(() =>
+    supabase.from("budget_settings").upsert({
+      ...state.settings, ...patch, household_id: HOUSEHOLD, updated_at: new Date().toISOString(),
+    }));
+
+  const saveDebt = (debt) => run(() =>
+    supabase.from("budget_debts").upsert({ ...debt, household_id: HOUSEHOLD }));
+
+  const addGoal = (goal) => run(() =>
+    supabase.from("budget_goals").insert({ ...goal, household_id: HOUSEHOLD }));
+
+  const saveGoal = (goal) => run(() =>
+    supabase.from("budget_goals").update({
+      title: goal.title, target: goal.target, deadline: goal.deadline || null,
+    }).eq("id", goal.id));
+
+  const delGoal = (id) => run(() =>
+    supabase.from("budget_goals").update({ archived: true }).eq("id", id));
+
+  return {
+    ...state, loading, busy, error, clearError: () => setError(null), reload: load,
+    addTx, delTx, setLimit, saveSettings, saveDebt, addGoal, saveGoal, delGoal,
+  };
+}
