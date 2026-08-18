@@ -147,6 +147,30 @@ export function computeLimits(txs, limits, month, settings) {
     });
 }
 
+// Общий лимит на месяц — когда думаем не по категориям, а одной суммой:
+// «до конца августа нам надо 8 000 ฿». Хранится как категория 'total'.
+export const TOTAL_LIMIT = "total";
+
+export function computeMonthPlan(txs, limits, month, settings) {
+  const totalRow = limits.find((l) => l.month === month && l.category === TOTAL_LIMIT);
+  // траты месяца без платежей по долгам — долги считаются отдельно
+  const spentAll = txs
+    .filter((t) => t.type === "expense" && t.category !== "debt" && monthKey(t.date) === month)
+    .reduce((s, t) => s + txRub(t, settings.rates), 0);
+
+  if (totalRow) {
+    const planned = toRub(totalRow.amount, totalRow.currency || "rub", settings.rates);
+    return {
+      mode: "total", planned, spent: spentAll, left: planned - spentAll,
+      amount: Number(totalRow.amount), currency: totalRow.currency || "rub",
+    };
+  }
+  const byCat = computeLimits(txs, limits, month, settings);
+  const planned = byCat.reduce((a, l) => a + l.amountRub, 0);
+  const spent = byCat.reduce((a, l) => a + l.spent, 0);
+  return { mode: "categories", planned, spent, left: planned - spent };
+}
+
 // ─── План закрытия долгов ──────────────────────────────────────────────────
 // Раскладываем запланированную на месяц сумму по долгам в порядке приоритета
 // (сначала сплит, потом кредитка, потом папе) и смотрим, что остаётся.

@@ -18,19 +18,28 @@ export function useBudget(session) {
   const [error, setError] = useState(null);
   const [busy, setBusy] = useState(false);
 
+  // К какой семье относится вошедший — берём из базы, а не из константы
+  const [household, setHousehold] = useState(HOUSEHOLD);
+
   const load = useCallback(async () => {
     if (!session) return;
     try {
+      const { data: me } = await supabase
+        .from("budget_members").select("household_id")
+        .eq("user_id", session.user.id).maybeSingle();
+      const HH = me?.household_id || HOUSEHOLD;
+      if (HH !== household) setHousehold(HH);
+
       const [txs, debts, goals, limits, plan, settings] = await Promise.all([
-        supabase.from("budget_transactions").select("*").eq("household_id", HOUSEHOLD)
+        supabase.from("budget_transactions").select("*").eq("household_id", HH)
           .order("date", { ascending: false }).order("created_at", { ascending: false }),
-        supabase.from("budget_debts").select("*").eq("household_id", HOUSEHOLD)
+        supabase.from("budget_debts").select("*").eq("household_id", HH)
           .eq("archived", false).order("sort_order"),
-        supabase.from("budget_goals").select("*").eq("household_id", HOUSEHOLD)
+        supabase.from("budget_goals").select("*").eq("household_id", HH)
           .eq("archived", false).order("sort_order"),
-        supabase.from("budget_limits").select("*").eq("household_id", HOUSEHOLD),
-        supabase.from("budget_debt_plan").select("*").eq("household_id", HOUSEHOLD).order("month"),
-        supabase.from("budget_settings").select("*").eq("household_id", HOUSEHOLD).maybeSingle(),
+        supabase.from("budget_limits").select("*").eq("household_id", HH),
+        supabase.from("budget_debt_plan").select("*").eq("household_id", HH).order("month"),
+        supabase.from("budget_settings").select("*").eq("household_id", HH).maybeSingle(),
       ]);
       const first = [txs, debts, goals, limits, plan, settings].find((r) => r.error);
       if (first) throw first.error;
@@ -80,7 +89,7 @@ export function useBudget(session) {
 
   const addTx = (tx) => run(() =>
     supabase.from("budget_transactions").insert({
-      ...tx, household_id: HOUSEHOLD, author: session.user.id,
+      ...tx, household_id: household, author: session.user.id,
     }));
 
   const delTx = (id) => run(() =>
@@ -89,29 +98,29 @@ export function useBudget(session) {
   const setLimit = (month, category, amount, currency = "rub") => run(() =>
     Number(amount) > 0
       ? supabase.from("budget_limits").upsert({
-          household_id: HOUSEHOLD, month, category, amount: Number(amount), currency,
+          household_id: household, month, category, amount: Number(amount), currency,
         })
       : supabase.from("budget_limits").delete()
-          .eq("household_id", HOUSEHOLD).eq("month", month).eq("category", category));
+          .eq("household_id", household).eq("month", month).eq("category", category));
 
   const setPlanMonth = (month, amount) => run(() =>
     Number(amount) > 0
       ? supabase.from("budget_debt_plan").upsert({
-          household_id: HOUSEHOLD, month, amount: Number(amount),
+          household_id: household, month, amount: Number(amount),
         })
       : supabase.from("budget_debt_plan").delete()
-          .eq("household_id", HOUSEHOLD).eq("month", month));
+          .eq("household_id", household).eq("month", month));
 
   const saveSettings = (patch) => run(() =>
     supabase.from("budget_settings").upsert({
-      ...state.settings, ...patch, household_id: HOUSEHOLD, updated_at: new Date().toISOString(),
+      ...state.settings, ...patch, household_id: household, updated_at: new Date().toISOString(),
     }));
 
   const saveDebt = (debt) => run(() =>
-    supabase.from("budget_debts").upsert({ ...debt, household_id: HOUSEHOLD }));
+    supabase.from("budget_debts").upsert({ ...debt, household_id: household }));
 
   const addGoal = (goal) => run(() =>
-    supabase.from("budget_goals").insert({ ...goal, household_id: HOUSEHOLD }));
+    supabase.from("budget_goals").insert({ ...goal, household_id: household }));
 
   const saveGoal = (goal) => run(() =>
     supabase.from("budget_goals").update({

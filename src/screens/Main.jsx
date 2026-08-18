@@ -3,7 +3,7 @@ import { fmt, fmtCur, txRub, debtForecast, monthLabel, currentMonth } from "../l
 import { s, Bar } from "../lib/ui";
 
 export default function Main({ budget, view, period, setPeriod, onOpenAdd, onOpenHistory }) {
-  const { balances, totalRub, debts, goals, income, expense, limits, plannedLeft, debtMonth } = view;
+  const { balances, totalRub, debts, goals, income, expense, limits, monthPlan, debtMonth } = view;
   const rates = budget.settings.rates;
   const totalDebt = debts.reduce((a, d) => a + d.current, 0);
 
@@ -45,34 +45,59 @@ export default function Main({ budget, view, period, setPeriod, onOpenAdd, onOpe
           ))}
         </div>
 
-        {/* Сколько ещё можно потратить по плану */}
-        {limits.length > 0 && (
-          <div style={{ ...s.card, background: plannedLeft >= 0 ? "#fff" : "#fff6f6" }}>
-            <div style={s.lbl}>План на {monthLabel(currentMonth())}</div>
+        {/* Сколько уже потрачено из запланированного на месяц */}
+        {monthPlan.planned > 0 && (
+          <div style={{ ...s.card, background: monthPlan.left >= 0 ? "#fff" : "#fff6f6" }}>
+            <div style={s.lbl}>План трат на {monthLabel(currentMonth())}</div>
             <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
-              <span style={{ fontSize: 13, color: "#666" }}>
-                {plannedLeft >= 0 ? "Свободно до конца месяца" : "Перерасход"}
+              <span style={{ fontSize: 22, fontWeight: 800, color: monthPlan.left >= 0 ? "#1a1a2e" : "#E24B4A" }}>
+                {fmt(monthPlan.spent)}
               </span>
-              <span style={{ fontSize: 22, fontWeight: 800, color: plannedLeft >= 0 ? "#1D9E75" : "#E24B4A" }}>
-                {fmt(Math.abs(plannedLeft))}
+              <span style={{ fontSize: 13, color: "#999" }}>
+                из {monthPlan.mode === "total" && monthPlan.currency === "bath"
+                  ? `${Math.round(monthPlan.amount).toLocaleString("ru-RU")} ฿ = ${fmt(monthPlan.planned)}`
+                  : fmt(monthPlan.planned)}
               </span>
             </div>
-            <div style={{ marginTop: 10, display: "grid", gap: 9 }}>
-              {limits.filter((l) => l.pct > 0).sort((a, b) => b.pct - a.pct).slice(0, 4).map((l) => {
-                const c = findCat(l.category);
-                return (
-                  <div key={l.category}>
-                    <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
-                      <span style={{ color: "#555" }}>{c?.icon} {c?.label}</span>
-                      <span style={{ color: l.pct > 100 ? "#E24B4A" : "#999" }}>
-                        {fmt(l.spent)} / {fmt(l.amount)}
-                      </span>
+            <div style={{ marginTop: 8 }}>
+              <Bar pct={(monthPlan.spent / monthPlan.planned) * 100}
+                color={monthPlan.left >= 0 ? "#1D9E75" : "#E24B4A"} height={8} />
+            </div>
+            <div style={{ fontSize: 11, color: "#999", marginTop: 6 }}>
+              {monthPlan.left >= 0
+                ? `Осталось по плану ${fmt(monthPlan.left)} — это лимит трат, а не деньги на счетах`
+                : `Перерасход ${fmt(-monthPlan.left)} сверх плана`}
+            </div>
+
+            {/* Хватает ли денег на то, что запланировали */}
+            {monthPlan.left > 0 && (
+              <div style={{ marginTop: 10, padding: 10, borderRadius: 10,
+                            background: totalRub >= monthPlan.left ? "#EAF3DE" : "#FFF8EC",
+                            fontSize: 12, color: totalRub >= monthPlan.left ? "#3B6D11" : "#854F0B" }}>
+                {totalRub >= monthPlan.left
+                  ? `На счетах ${fmt(totalRub)} — на остаток плана хватает`
+                  : `На счетах ${fmt(totalRub)} — до остатка плана не хватает ${fmt(monthPlan.left - totalRub)}`}
+              </div>
+            )}
+
+            {monthPlan.mode === "categories" && (
+              <div style={{ marginTop: 10, display: "grid", gap: 9 }}>
+                {limits.filter((l) => l.pct > 0).sort((a, b) => b.pct - a.pct).slice(0, 4).map((l) => {
+                  const c = findCat(l.category);
+                  return (
+                    <div key={l.category}>
+                      <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 4 }}>
+                        <span style={{ color: "#555" }}>{c?.icon} {c?.label}</span>
+                        <span style={{ color: l.pct > 100 ? "#E24B4A" : "#999" }}>
+                          {fmt(l.spent)} / {fmt(l.amountRub)}
+                        </span>
+                      </div>
+                      <Bar pct={l.pct} color={l.pct > 100 ? "#E24B4A" : l.pct > 80 ? "#F39C12" : c?.color || "#2ECC71"} />
                     </div>
-                    <Bar pct={l.pct} color={l.pct > 100 ? "#E24B4A" : l.pct > 80 ? "#F39C12" : c?.color || "#2ECC71"} />
-                  </div>
-                );
-              })}
-            </div>
+                  );
+                })}
+              </div>
+            )}
           </div>
         )}
 

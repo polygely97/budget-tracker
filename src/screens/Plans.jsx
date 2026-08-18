@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { EXPENSE_CATS, ACCOUNTS } from "../lib/constants";
-import { fmt, currentMonth, monthLabel, monthKey, toRub } from "../lib/model";
+import { fmt, currentMonth, monthLabel, monthKey, toRub, TOTAL_LIMIT } from "../lib/model";
 import { s, Bar } from "../lib/ui";
 import { supabase } from "../lib/supabase";
 
@@ -158,6 +158,9 @@ function AddPlanMonth({ budget, plan }) {
 function Limits({ budget, view, month, setMonth }) {
   const rates = budget.settings.rates;
   const rows = budget.limits.filter((l) => l.month === month);
+  const totalRow = rows.find((l) => l.category === TOTAL_LIMIT);
+  const totalAmount = Number(totalRow?.amount) || 0;
+  const totalCurrency = totalRow?.currency || "bath";
   const limitsMap = Object.fromEntries(rows.map((l) => [l.category, Number(l.amount)]));
   const curMap = Object.fromEntries(rows.map((l) => [l.category, l.currency || "rub"]));
   const spentMap = Object.fromEntries(view.limits.map((l) => [l.category, l.spent]));
@@ -166,7 +169,9 @@ function Limits({ budget, view, month, setMonth }) {
   // лимит может быть в баттах — считаем всё в рублях по текущему курсу
   const inRub = (cat) => toRub(limitsMap[cat] || 0, curMap[cat] || "rub", rates);
   const total = EXPENSE_CATS.reduce((a, c) => a + inRub(c.id), 0);
-  const spentTotal = EXPENSE_CATS.reduce((a, c) => a + (spentMap[c.id] || 0), 0);
+  // если задана общая сумма месяца — она главнее, чем сумма по категориям
+  const planned = totalRow ? toRub(totalAmount, totalCurrency, rates) : total;
+  const monthSpent = isCurrent ? view.monthPlan.spent : 0;
 
   const copyPrevious = async () => {
     const prev = shiftMonth(month, -1);
@@ -184,24 +189,62 @@ function Limits({ budget, view, month, setMonth }) {
         </div>
         <div style={{ marginTop: 12, display: "flex", justifyContent: "space-between", fontSize: 13 }}>
           <span style={{ color: "#666" }}>Запланировано всего</span>
-          <span style={{ fontWeight: 800, color: "#1a1a2e" }}>{fmt(total)}</span>
+          <span style={{ fontWeight: 800, color: "#1a1a2e" }}>{fmt(planned)}</span>
         </div>
-        {isCurrent && total > 0 && (
+        {isCurrent && planned > 0 && (
           <>
             <div style={{ marginTop: 8 }}>
-              <Bar pct={(spentTotal / total) * 100} color={spentTotal > total ? "#E24B4A" : "#1D9E75"} height={8} />
+              <Bar pct={(monthSpent / planned) * 100} color={monthSpent > planned ? "#E24B4A" : "#1D9E75"} height={8} />
             </div>
             <div style={{ marginTop: 6, fontSize: 12, color: "#999" }}>
-              Потрачено {fmt(spentTotal)} · {spentTotal <= total
-                ? `свободно ${fmt(total - spentTotal)}`
-                : `перерасход ${fmt(spentTotal - total)}`}
+              Потрачено {fmt(monthSpent)} · {monthSpent <= planned
+                ? `осталось по плану ${fmt(planned - monthSpent)}`
+                : `перерасход ${fmt(monthSpent - planned)}`}
             </div>
+            {totalRow && (
+              <div style={{ marginTop: 4, fontSize: 11, color: "#bbb" }}>
+                Считаем по общей сумме месяца, лимиты по категориям сейчас не учитываются.
+              </div>
+            )}
           </>
         )}
-        {total === 0 && (
+        {total === 0 && !totalRow && (
           <button onClick={copyPrevious} style={{ ...s.filterBtn(false), marginTop: 12, width: "100%", padding: 10 }}>
             Скопировать план прошлого месяца
           </button>
+        )}
+      </div>
+
+      {/* Одна сумма на месяц — когда не хочется расписывать по категориям */}
+      <div style={s.card}>
+        <div style={s.lbl}>Одной суммой на месяц</div>
+        <div style={{ fontSize: 11, color: "#bbb", marginBottom: 10 }}>
+          Например: «до конца августа нам нужно 8 000 ฿». Если сумма задана, считаем по ней,
+          а лимиты по категориям ниже не учитываются.
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <span style={{ flex: 1, fontSize: 14, color: "#444" }}>Всего на {monthLabel(month)}</span>
+          <button
+            onClick={() => budget.setLimit(month, TOTAL_LIMIT, totalAmount, totalCurrency === "rub" ? "bath" : "rub")}
+            disabled={!totalAmount}
+            style={{ border: "1px solid #eee", background: totalCurrency === "bath" ? "#EAF3DE" : "#fafafa",
+                     color: totalCurrency === "bath" ? "#3B6D11" : "#888", borderRadius: 8,
+                     padding: "7px 9px", cursor: totalAmount ? "pointer" : "default", fontSize: 13, fontWeight: 700 }}>
+            {totalCurrency === "bath" ? "฿" : "₽"}
+          </button>
+          <input
+            type="number" inputMode="decimal" defaultValue={totalAmount || ""} placeholder="—"
+            key={`${month}-total-${totalAmount}-${totalCurrency}`}
+            onBlur={(e) => {
+              const v = parseFloat(e.target.value) || 0;
+              if (v !== totalAmount) budget.setLimit(month, TOTAL_LIMIT, v, totalCurrency);
+            }}
+            style={{ ...s.inp, width: 100, padding: "8px 10px", textAlign: "right", fontSize: 15 }} />
+        </div>
+        {totalAmount > 0 && totalCurrency === "bath" && (
+          <div style={{ fontSize: 11, color: "#999", textAlign: "right", marginTop: 4 }}>
+            = {fmt(toRub(totalAmount, "bath", rates))} по курсу {rates.bath} ₽
+          </div>
         )}
       </div>
 
