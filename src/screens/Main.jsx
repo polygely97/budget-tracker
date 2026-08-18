@@ -3,7 +3,7 @@ import { fmt, fmtCur, txRub, debtForecast, monthLabel, currentMonth } from "../l
 import { s, Bar } from "../lib/ui";
 
 export default function Main({ budget, view, period, setPeriod, onOpenAdd, onOpenHistory }) {
-  const { balances, totalRub, debts, goals, income, expense, limits, plannedLeft } = view;
+  const { balances, totalRub, debts, goals, income, expense, limits, plannedLeft, debtMonth } = view;
   const rates = budget.settings.rates;
   const totalDebt = debts.reduce((a, d) => a + d.current, 0);
 
@@ -102,6 +102,25 @@ export default function Main({ budget, view, period, setPeriod, onOpenAdd, onOpe
         {/* Долги */}
         <div style={s.card}>
           <div style={s.lbl}>💳 Долги — {fmt(totalDebt)}</div>
+
+          {/* Идём ли по плану в этом месяце */}
+          {debtMonth.planned > 0 && (
+            <div style={{ padding: "2px 0 12px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between", fontSize: 12, marginBottom: 5 }}>
+                <span style={{ color: "#666", fontWeight: 600 }}>План месяца</span>
+                <span style={{ color: debtMonth.fact >= debtMonth.planned ? "#1D9E75" : "#E24B4A", fontWeight: 700 }}>
+                  {fmt(debtMonth.fact)} из {fmt(debtMonth.planned)}
+                </span>
+              </div>
+              <Bar pct={debtMonth.pct} color={debtMonth.fact >= debtMonth.planned ? "#1D9E75" : "#E24B4A"} height={8} />
+              <div style={{ fontSize: 11, color: "#bbb", marginTop: 4 }}>
+                {debtMonth.left > 0
+                  ? `осталось внести ${fmt(debtMonth.left)} до конца месяца`
+                  : "план месяца выполнен 🎉"}
+              </div>
+            </div>
+          )}
+
           {debts.map((d) => {
             const f = debtForecast(budget.txs, d, budget.settings);
             return (

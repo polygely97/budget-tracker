@@ -2,8 +2,8 @@ import { lazy, Suspense, useEffect, useMemo, useState } from "react";
 import { supabase } from "./lib/supabase";
 import { useBudget } from "./lib/useBudget";
 import {
-  computeBalances, computeDebts, computeGoals, computeLimits,
-  totalBalanceRub, filterByPeriod, txRub, currentMonth,
+  computeBalances, computeDebts, computeGoals, computeLimits, computeDebtPlan,
+  debtProgressThisMonth, totalBalanceRub, filterByPeriod, txRub, currentMonth,
 } from "./lib/model";
 import { s } from "./lib/ui";
 import Auth from "./screens/Auth";
@@ -44,26 +44,29 @@ function Budget({ session }) {
 
   // Все производные числа считаются из операций — единый источник правды
   const view = useMemo(() => {
-    const { txs, settings, debts, goals, limits } = budget;
+    const { txs, settings, debts, goals, limits, plan } = budget;
     const rates = settings.rates;
     const periodTxs = filterByPeriod(txs, period);
     const computedLimits = computeLimits(txs, limits, currentMonth(), settings);
-    const plannedTotal = computedLimits.reduce((a, l) => a + Number(l.amount), 0);
+    const plannedTotal = computedLimits.reduce((a, l) => a + l.amountRub, 0);
     const plannedSpent = computedLimits.reduce((a, l) => a + l.spent, 0);
     const balances = computeBalances(txs, settings);
+    const computedDebts = computeDebts(txs, debts, settings);
 
     return {
       txs: periodTxs,
       balances,
       totalRub: totalBalanceRub(balances, rates),
-      debts: computeDebts(txs, debts, settings),
+      debts: computedDebts,
       goals: computeGoals(txs, goals, settings),
       limits: computedLimits,
       plannedLeft: plannedTotal - plannedSpent,
+      debtPlan: computeDebtPlan(plan, computedDebts, txs, settings),
+      debtMonth: debtProgressThisMonth(plan, txs, settings),
       income: periodTxs.filter((t) => t.type === "income").reduce((a, t) => a + txRub(t, rates), 0),
       expense: periodTxs.filter((t) => t.type === "expense").reduce((a, t) => a + txRub(t, rates), 0),
     };
-  }, [budget.txs, budget.settings, budget.debts, budget.goals, budget.limits, period]);
+  }, [budget.txs, budget.settings, budget.debts, budget.goals, budget.limits, budget.plan, period]);
 
   if (budget.loading) return <Splash text="Загрузка…" />;
 

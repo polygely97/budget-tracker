@@ -1,8 +1,10 @@
 export const EXPENSE_CATS = [
-  { id: "villa",    icon: "🏠", label: "Жильё",    color: "#6C63FF" },
+  { id: "villa",    icon: "🏠", label: "Вилла",    color: "#6C63FF" },
   { id: "car",      icon: "🚗", label: "Машина",   color: "#3498DB" },
+  { id: "gas",      icon: "⛽", label: "Бензин",   color: "#16A085" },
   { id: "food",     icon: "🛒", label: "Продукты", color: "#2ECC71" },
   { id: "cafe",     icon: "☕", label: "Кафе",     color: "#F39C12" },
+  { id: "subs",     icon: "📱", label: "Подписки", color: "#5D6D7E" },
   { id: "belka",    icon: "🐾", label: "Белка",    color: "#E67E22" },
   { id: "sport",    icon: "💪", label: "Спорт",    color: "#1ABC9C" },
   { id: "health",   icon: "💊", label: "Здоровье", color: "#E74C3C" },

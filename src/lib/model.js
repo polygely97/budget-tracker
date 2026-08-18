@@ -128,6 +128,8 @@ export function computeGoals(txs, goals, settings) {
 }
 
 // ─── Планы трат ────────────────────────────────────────────────────────────
+// Лимит можно задать в валюте, в которой реально живём: 45 000 ฿ за виллу
+// остаются 45 000 ฿, а в рубли пересчитываются по текущему курсу.
 export function computeLimits(txs, limits, month, settings) {
   return limits
     .filter((l) => l.month === month)
@@ -135,9 +137,59 @@ export function computeLimits(txs, limits, month, settings) {
       const spent = txs
         .filter((t) => t.type === "expense" && t.category === l.category && monthKey(t.date) === month)
         .reduce((sum, t) => sum + txRub(t, settings.rates), 0);
-      const amount = Number(l.amount) || 0;
-      return { ...l, spent, left: amount - spent, pct: amount > 0 ? (spent / amount) * 100 : 0 };
+      const cur = l.currency || "rub";
+      const amountRub = toRub(l.amount, cur, settings.rates);
+      return {
+        ...l, currency: cur, amountRub, spent,
+        left: amountRub - spent,
+        pct: amountRub > 0 ? (spent / amountRub) * 100 : 0,
+      };
     });
+}
+
+// ─── План закрытия долгов ──────────────────────────────────────────────────
+// Раскладываем запланированную на месяц сумму по долгам в порядке приоритета
+// (сначала сплит, потом кредитка, потом папе) и смотрим, что остаётся.
+export function computeDebtPlan(plan, debts, txs, settings) {
+  const order = [...debts].sort((a, b) => (a.priority ?? 100) - (b.priority ?? 100));
+  const rest = Object.fromEntries(order.map((d) => [d.id, d.current]));
+  const now = currentMonth();
+
+  return [...plan]
+    .sort((a, b) => a.month.localeCompare(b.month))
+    .map((row) => {
+      let free = Number(row.amount) || 0;
+      const closes = [];
+      for (const d of order) {
+        if (rest[d.id] <= 0 || free <= 0) continue;
+        const pay = Math.min(rest[d.id], free);
+        rest[d.id] -= pay;
+        free -= pay;
+        if (rest[d.id] <= 0) closes.push(d.label);
+      }
+      // за текущий и прошедшие месяцы показываем факт, а не только план
+      const fact = txs
+        .filter((t) => t.type === "expense" && t.category === "debt" && monthKey(t.date) === row.month)
+        .reduce((s, t) => s + txRub(t, settings.rates), 0);
+      return {
+        ...row,
+        fact,
+        isPast: row.month < now,
+        isCurrent: row.month === now,
+        left: { ...rest },
+        closes,
+      };
+    });
+}
+
+// Сколько ушло на долги в конкретном месяце и сколько планировали
+export function debtProgressThisMonth(plan, txs, settings) {
+  const month = currentMonth();
+  const planned = Number(plan.find((p) => p.month === month)?.amount) || 0;
+  const fact = txs
+    .filter((t) => t.type === "expense" && t.category === "debt" && monthKey(t.date) === month)
+    .reduce((s, t) => s + txRub(t, settings.rates), 0);
+  return { month, planned, fact, left: planned - fact, pct: planned > 0 ? (fact / planned) * 100 : 0 };
 }
 
 // ─── Темп погашения долгов ─────────────────────────────────────────────────

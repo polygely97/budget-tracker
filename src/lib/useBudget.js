@@ -12,7 +12,7 @@ const DEFAULT_SETTINGS = {
 // со своего телефона, он появляется здесь сам, без перезагрузки.
 export function useBudget(session) {
   const [state, setState] = useState({
-    txs: [], debts: [], goals: [], limits: [], settings: DEFAULT_SETTINGS,
+    txs: [], debts: [], goals: [], limits: [], plan: [], settings: DEFAULT_SETTINGS,
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -21,7 +21,7 @@ export function useBudget(session) {
   const load = useCallback(async () => {
     if (!session) return;
     try {
-      const [txs, debts, goals, limits, settings] = await Promise.all([
+      const [txs, debts, goals, limits, plan, settings] = await Promise.all([
         supabase.from("budget_transactions").select("*").eq("household_id", HOUSEHOLD)
           .order("date", { ascending: false }).order("created_at", { ascending: false }),
         supabase.from("budget_debts").select("*").eq("household_id", HOUSEHOLD)
@@ -29,15 +29,17 @@ export function useBudget(session) {
         supabase.from("budget_goals").select("*").eq("household_id", HOUSEHOLD)
           .eq("archived", false).order("sort_order"),
         supabase.from("budget_limits").select("*").eq("household_id", HOUSEHOLD),
+        supabase.from("budget_debt_plan").select("*").eq("household_id", HOUSEHOLD).order("month"),
         supabase.from("budget_settings").select("*").eq("household_id", HOUSEHOLD).maybeSingle(),
       ]);
-      const first = [txs, debts, goals, limits, settings].find((r) => r.error);
+      const first = [txs, debts, goals, limits, plan, settings].find((r) => r.error);
       if (first) throw first.error;
       setState({
         txs: txs.data || [],
         debts: debts.data || [],
         goals: goals.data || [],
         limits: limits.data || [],
+        plan: plan.data || [],
         settings: settings.data || DEFAULT_SETTINGS,
       });
       setError(null);
@@ -54,7 +56,7 @@ export function useBudget(session) {
   useEffect(() => {
     if (!session) return;
     const ch = supabase.channel("budget-sync");
-    ["budget_transactions", "budget_debts", "budget_goals", "budget_limits", "budget_settings"]
+    ["budget_transactions", "budget_debts", "budget_goals", "budget_limits", "budget_debt_plan", "budget_settings"]
       .forEach((table) => ch.on("postgres_changes", { event: "*", schema: "public", table }, load));
     ch.subscribe();
     return () => { supabase.removeChannel(ch); };
@@ -84,13 +86,21 @@ export function useBudget(session) {
   const delTx = (id) => run(() =>
     supabase.from("budget_transactions").delete().eq("id", id));
 
-  const setLimit = (month, category, amount) => run(() =>
+  const setLimit = (month, category, amount, currency = "rub") => run(() =>
     Number(amount) > 0
       ? supabase.from("budget_limits").upsert({
-          household_id: HOUSEHOLD, month, category, amount: Number(amount),
+          household_id: HOUSEHOLD, month, category, amount: Number(amount), currency,
         })
       : supabase.from("budget_limits").delete()
           .eq("household_id", HOUSEHOLD).eq("month", month).eq("category", category));
+
+  const setPlanMonth = (month, amount) => run(() =>
+    Number(amount) > 0
+      ? supabase.from("budget_debt_plan").upsert({
+          household_id: HOUSEHOLD, month, amount: Number(amount),
+        })
+      : supabase.from("budget_debt_plan").delete()
+          .eq("household_id", HOUSEHOLD).eq("month", month));
 
   const saveSettings = (patch) => run(() =>
     supabase.from("budget_settings").upsert({
@@ -113,6 +123,6 @@ export function useBudget(session) {
 
   return {
     ...state, loading, busy, error, clearError: () => setError(null), reload: load,
-    addTx, delTx, setLimit, saveSettings, saveDebt, addGoal, saveGoal, delGoal,
+    addTx, delTx, setLimit, setPlanMonth, saveSettings, saveDebt, addGoal, saveGoal, delGoal,
   };
 }
