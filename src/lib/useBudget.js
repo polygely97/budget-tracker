@@ -6,6 +6,7 @@ const DEFAULT_SETTINGS = {
   rates: { bath: 2.49, byn: 2.5, usd: 91.88 },
   usd_fee: 0.25,
   initial_balances: { rub: 0, bath: 0, byn: 0, usd: 0 },
+  start_date: null,
 };
 
 // Все данные семьи + подписка на изменения: если Оксана записала расход

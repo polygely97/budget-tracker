@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { EXPENSE_CATS, ACCOUNTS } from "../lib/constants";
-import { fmt, currentMonth, monthLabel, monthKey, toRub, TOTAL_LIMIT } from "../lib/model";
+import { fmt, currentMonth, monthLabel, monthKey, toRub, today, TOTAL_LIMIT } from "../lib/model";
 import { s, Bar } from "../lib/ui";
 import { supabase } from "../lib/supabase";
 
@@ -416,6 +416,7 @@ function Settings({ budget, session }) {
   const [rates, setRates] = useState(st.rates);
   const [fee, setFee] = useState(st.usd_fee);
   const [init, setInit] = useState(st.initial_balances || {});
+  const [startDate, setStartDate] = useState(st.start_date || "");
   const [debts, setDebts] = useState(budget.debts);
 
   const saveAll = async () => {
@@ -430,6 +431,7 @@ function Settings({ budget, session }) {
         rub: parseFloat(init.rub) || 0, bath: parseFloat(init.bath) || 0,
         byn: parseFloat(init.byn) || 0, usd: parseFloat(init.usd) || 0,
       },
+      start_date: startDate || null,
     });
     for (const d of debts) {
       const orig = budget.debts.find((x) => x.id === d.id);
@@ -459,9 +461,20 @@ function Settings({ budget, session }) {
       </div>
 
       <div style={s.card}>
-        <div style={s.lbl}>Остатки на старте</div>
+        <div style={s.lbl}>Сверка: точка отсчёта</div>
         <div style={{ fontSize: 11, color: "#bbb", marginBottom: 6 }}>
-          Сколько было на счетах, когда начали вести учёт. Дальше баланс считается сам по операциям.
+          Если учёт забросили и цифры разъехались — не переписывай историю. Поставь сегодняшнюю дату,
+          впиши, сколько реально на счетах и сколько долгов, и с этого дня всё считается заново.
+          Старые операции остаются в истории, но в балансы не входят.
+        </div>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0" }}>
+          <span style={{ flex: 1, fontSize: 14, color: "#444" }}>Дата сверки</span>
+          <button onClick={() => setStartDate(today())} style={{ ...s.filterBtn(false), padding: "6px 10px", fontSize: 12 }}>сегодня</button>
+          <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)}
+            style={{ ...s.inp, width: 150, padding: "8px 10px", fontSize: 15 }} />
+        </div>
+        <div style={{ fontSize: 11, color: "#bbb", margin: "6px 0 2px" }}>
+          {startDate ? `Остатки на ${startDate}` : "Дата не задана — остатки на самый первый день учёта"}
         </div>
         {ACCOUNTS.filter((a) => !a.isDebt).map((a) =>
           <div key={a.id}>{field(`${a.icon} ${a.label}`, init[a.currency] ?? 0, (v) => setInit({ ...init, [a.currency]: v }))}</div>
@@ -469,7 +482,7 @@ function Settings({ budget, session }) {
       </div>
 
       <div style={s.card}>
-        <div style={s.lbl}>Долги — исходные суммы</div>
+        <div style={s.lbl}>{startDate ? `Долги на ${startDate}` : "Долги — исходные суммы"}</div>
         {debts.map((d, i) => (
           <div key={d.id}>
             {field(d.label, d.initial_amount, (v) => {
@@ -478,7 +491,7 @@ function Settings({ budget, session }) {
           </div>
         ))}
         <div style={{ fontSize: 11, color: "#bbb", marginTop: 4 }}>
-          Текущий остаток = исходная сумма + траты по кредитке − все платежи.
+          Текущий остаток = эта сумма + траты по кредитке − платежи, начиная с даты сверки.
         </div>
       </div>
 

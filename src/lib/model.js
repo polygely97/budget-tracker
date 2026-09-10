@@ -55,10 +55,22 @@ const withdrawal = (tx, settings) => {
   return (Number(tx.amount) || 0) + fee;
 };
 
+// ─── Точка отсчёта ─────────────────────────────────────────────────────────
+// Когда учёт забросили и цифры разъехались с реальностью, не переписываем
+// историю, а делаем сверку: вводим реальные остатки и долги на дату
+// settings.start_date. В балансы и долги входят только операции с этой даты,
+// более ранние остаются в истории как есть.
+export const sinceStart = (txs, settings) => {
+  const from = settings?.start_date;
+  if (!from) return txs;
+  return txs.filter((t) => String(t.date) >= String(from));
+};
+
 // ─── Балансы счетов ────────────────────────────────────────────────────────
-// Считаются от стартовых остатков + все операции. Единственный источник правды —
-// список операций, поэтому баланс не может «разъехаться» с историей.
-export function computeBalances(txs, settings) {
+// Считаются от стартовых остатков + все операции с точки отсчёта. Единственный
+// источник правды — список операций, поэтому баланс не может «разъехаться» с историей.
+export function computeBalances(allTxs, settings) {
+  const txs = sinceStart(allTxs, settings);
   const rates = settings.rates;
   const bal = { ...{ rub: 0, bath: 0, byn: 0, usd: 0 }, ...(settings.initial_balances || {}) };
   Object.keys(bal).forEach((k) => (bal[k] = Number(bal[k]) || 0));
@@ -90,7 +102,8 @@ export const totalBalanceRub = (bal, rates) =>
 
 // ─── Долги ─────────────────────────────────────────────────────────────────
 // Текущий долг = стартовый + всё, что потрачено с кредитки − все платежи по нему
-export function computeDebts(txs, debts, settings) {
+export function computeDebts(allTxs, debts, settings) {
+  const txs = sinceStart(allTxs, settings);
   return debts.map((d) => {
     let grown = 0;
     let paid = 0;
